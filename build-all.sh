@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-APP_NAME="metercli-go"
+APP_NAME="mindergas-go"
 PLATFORMS=(
   "linux/amd64"
   "linux/arm64"

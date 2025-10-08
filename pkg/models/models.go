@@ -1,8 +1,6 @@
 package models
 
 type MeterReading struct {
-	ID        string         `json:"id"`
-	Timestamp string         `json:"timestamp"`
-	Value     float64        `json:"value"`
-	Metadata  map[string]any `json:"metadata"`
+	Date    string  `json:"date"`
+	Reading float64 `json:"reading"`
 }

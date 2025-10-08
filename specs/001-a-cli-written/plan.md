@@ -63,7 +63,7 @@ specs/[###-feature]/
 
 ### Source Code (repository root)
 ```
-cmd/earliest-meter/       # main CLI command
+cmd/mindergas-go/       # main CLI command
 internal/db/              # DB access and selection logic
 internal/http/            # POST delivery and retry logic
 internal/config/          # flag/env parsing

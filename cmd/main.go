@@ -23,7 +23,7 @@ func main() {
 	flag.BoolVar(&dryRun, "dry-run", false, "Build payload but do not POST")
 	flag.Parse()
 
-	logger := log.New(os.Stderr, "earliest-meter: ", log.LstdFlags)
+	logger := log.New(os.Stderr, "mindergas-go: ", log.LstdFlags)
 
 	// Load config
 	cfgBytes, err := os.ReadFile(configPath)
@@ -66,14 +66,13 @@ func main() {
 	midnight := time.Date(y, m, d, 0, 0, 0, 0, loc)
 
 	payload := models.MeterReading{
-		ID:        r.ID,
-		Timestamp: midnight.Format("2006-01-02T15:04:05"),
-		Value:     r.Value,
+		Date:    midnight.Format("2006-01-02T15:04:05"),
+		Reading: r.Value,
 	}
 
 	b, _ := json.MarshalIndent(payload, "", "  ")
 
-	logger.Printf("selected: id=%s ts=%s value=%v", payload.ID, payload.Timestamp, payload.Value)
+	logger.Printf("selected: date=%s reading=%v", payload.Date, payload.Reading)
 
 	if dryRun {
 		fmt.Println(string(b))

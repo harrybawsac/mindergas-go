@@ -34,7 +34,7 @@
 [Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
-**Language/Version**: Go 1.20+  
+**Language/Version**: Go 1.24+  
 **Primary Dependencies**: `pgx` (Postgres driver), `spf13/cobra` (CLI helper, optional), `go-retryablehttp` or equivalent retry logic for POST
 **Storage**: PostgreSQL (timestamptz)  
 **Target Platform**: Linux servers; all hosts in `Europe/Amsterdam` timezone

@@ -1,3 +1,4 @@
 {
-  "db_dsn": "host=127.0.0.1 port=5432 user=p1 password='password' dbname=postgres sslmode=disable options='-c search_path=p1'"
+  "db_dsn": "host=127.0.0.1 port=5432 user=p1 password='password' dbname=postgres sslmode=disable options='-c search_path=p1'",
+  "token": "token from mindergas.nl"
 }

@@ -32,6 +32,7 @@ func main() {
 	}
 	var cfg struct {
 		DbDSN string `json:"db_dsn"`
+		Token string `json:"token"`
 	}
 	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
 		logger.Fatalf("parse config: %v", err)
@@ -40,6 +41,10 @@ func main() {
 	if dbURL == "" {
 		logger.Fatal("db_dsn missing in config")
 	}
+	if cfg.Token == "" {
+		logger.Fatal("token missing in config")
+	}
+	token := cfg.Token
 
 	ctx := context.Background()
 
@@ -79,12 +84,10 @@ func main() {
 		return
 	}
 
-	// Hardcoded post URL per request
-	postURL := "https://mindergas.nl/api/meter_readings"
+	postURL := "https://www.mindergas.nl/api/meter_readings"
 
-	// Use a small default retry count. Retries flag removed per spec.
-	client := httpclient.New(postURL, 3)
-	if err := client.PostJSON(ctx, b); err != nil {
+	client := httpclient.New(postURL)
+	if err := client.PostJSON(ctx, b, token); err != nil {
 		logger.Fatalf("post failed: %v", err)
 	}
 

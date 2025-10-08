@@ -1,8 +1,10 @@
 package httpclient
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -10,36 +12,40 @@ import (
 )
 
 type Client struct {
-	url     string
-	retries int
-	client  *retryable.Client
+	url    string
+	client *retryable.Client
 }
 
-func New(url string, retries int) *Client {
+func New(url string) *Client {
 	rc := retryable.NewClient()
 	rc.HTTPClient = &http.Client{Timeout: 10 * time.Second}
-	rc.RetryMax = retries
 	rc.Logger = nil
-	return &Client{url: url, retries: retries, client: rc}
+	return &Client{url: url, client: rc}
 }
 
-func (c *Client) PostJSON(ctx context.Context, body []byte) error {
+func (c *Client) PostJSON(ctx context.Context, body []byte, authToken string) error {
 	if c.url == "" {
 		return errors.New("no url provided")
 	}
-	req, err := retryable.NewRequest("POST", c.url, body)
+
+	// Build a real *http.Request so headers are set on the actual request
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req = req.WithContext(ctx)
+
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client.StandardClient().Do(req.Request)
+	req.Header.Set("API-VERSION", "1.0")
+	req.Header.Set("AUTH-TOKEN", authToken)
+
+	resp, err := c.client.StandardClient().Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.New("non-2xx response")
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return errors.New("non-2xx response: " + resp.Status + ". Response body: " + string(bodyBytes) + ". My request body: " + string(body))
 	}
 	return nil
 }

@@ -52,64 +52,86 @@ func main() {
 
 	ctx := context.Background()
 
-	// Get reading from either DB or CSV
-	var r *db.Reading
+	postURL := "https://www.mindergas.nl/api/meter_readings"
+	client := httpclient.New(postURL)
+
+	loc, err := time.LoadLocation("Europe/Amsterdam")
+	if err != nil {
+		loc = time.UTC
+	}
 
 	if cfg.DbDSN != "" {
-		// Connect to DB
+		// DB mode: get earliest reading for today and POST once
 		conn, err := db.Connect(ctx, cfg.DbDSN)
 		if err != nil {
 			logger.Fatalf("db connect: %v", err)
 		}
 		defer conn.Close(ctx)
 
-		// Select earliest reading for today (Europe/Amsterdam)
-		r, err = db.SelectEarliestToday(ctx, conn)
+		r, err := db.SelectEarliestToday(ctx, conn)
 		if err != nil {
 			logger.Fatalf("select earliest from db: %v", err)
 		}
+
+		// Normalize timestamp to start of day (midnight)
+		rt := r.Timestamp.In(loc)
+		y, m, d := rt.Date()
+		midnight := time.Date(y, m, d, 0, 0, 0, 0, loc)
+
+		payload := models.MeterReading{
+			Date:    midnight.Format("2006-01-02T15:04:05"),
+			Reading: r.Value,
+		}
+
+		b, _ := json.MarshalIndent(payload, "", "  ")
+		logger.Printf("selected: date=%s reading=%v", payload.Date, payload.Reading)
+
+		if dryRun {
+			fmt.Println(string(b))
+			return
+		}
+
+		if err := client.PostJSON(ctx, b, token); err != nil {
+			logger.Fatalf("post failed: %v", err)
+		}
+		logger.Printf("delivered payload to %s", postURL)
 	} else {
-		// Read from CSV file
-		csvReading, err := csvreader.SelectEarliestToday(cfg.CSVPath)
+		// CSV mode: read all rows and POST each with 3s delay
+		readings, err := csvreader.ReadAll(cfg.CSVPath)
 		if err != nil {
-			logger.Fatalf("select earliest from csv: %v", err)
+			logger.Fatalf("read csv: %v", err)
 		}
-		// Convert csvreader.Reading to db.Reading for consistency
-		r = &db.Reading{
-			Timestamp: csvReading.Timestamp,
-			Value:     csvReading.Value,
+
+		logger.Printf("found %d readings in CSV", len(readings))
+
+		for i, r := range readings {
+			// Normalize timestamp to start of day (midnight)
+			rt := r.Timestamp.In(loc)
+			y, m, d := rt.Date()
+			midnight := time.Date(y, m, d, 0, 0, 0, 0, loc)
+
+			payload := models.MeterReading{
+				Date:    midnight.Format("2006-01-02T15:04:05"),
+				Reading: r.Value,
+			}
+
+			b, _ := json.MarshalIndent(payload, "", "  ")
+			logger.Printf("[%d/%d] date=%s reading=%v", i+1, len(readings), payload.Date, payload.Reading)
+
+			if dryRun {
+				fmt.Println(string(b))
+			} else {
+				if err := client.PostJSON(ctx, b, token); err != nil {
+					logger.Printf("post failed for %s: %v", payload.Date, err)
+					continue
+				}
+				logger.Printf("delivered payload to %s", postURL)
+			}
+
+			// Wait 3 seconds between POSTs (except after the last one)
+			if i < len(readings)-1 {
+				time.Sleep(3 * time.Second)
+			}
 		}
 	}
-
-	// Normalize timestamp to start of day (midnight) in Europe/Amsterdam
-	loc, err := time.LoadLocation("Europe/Amsterdam")
-	if err != nil {
-		loc = time.UTC
-	}
-	rt := r.Timestamp.In(loc)
-	y, m, d := rt.Date()
-	midnight := time.Date(y, m, d, 0, 0, 0, 0, loc)
-
-	payload := models.MeterReading{
-		Date:    midnight.Format("2006-01-02T15:04:05"),
-		Reading: r.Value,
-	}
-
-	b, _ := json.MarshalIndent(payload, "", "  ")
-
-	logger.Printf("selected: date=%s reading=%v", payload.Date, payload.Reading)
-
-	if dryRun {
-		fmt.Println(string(b))
-		return
-	}
-
-	postURL := "https://www.mindergas.nl/api/meter_readings"
-
-	client := httpclient.New(postURL)
-	if err := client.PostJSON(ctx, b, token); err != nil {
-		logger.Fatalf("post failed: %v", err)
-	}
-
-	logger.Printf("delivered payload to %s", postURL)
 }

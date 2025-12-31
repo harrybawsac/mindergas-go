@@ -14,15 +14,14 @@ type Reading struct {
 	Value     float64
 }
 
-// SelectEarliestToday reads a CSV file and returns the earliest reading for today
-// (in Europe/Amsterdam timezone).
+// ReadAll reads a CSV file and returns all readings.
 //
 // Expected CSV format: timestamp,value
 // - timestamp: RFC3339 or "2006-01-02 15:04:05" format
 // - value: float64 meter reading
 //
 // The CSV file should have a header row which will be skipped.
-func SelectEarliestToday(path string) (*Reading, error) {
+func ReadAll(path string) ([]Reading, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -39,17 +38,12 @@ func SelectEarliestToday(path string) (*Reading, error) {
 		return nil, errors.New("csv file has no data rows")
 	}
 
-	// Current time in Europe/Amsterdam
 	loc, err := time.LoadLocation("Europe/Amsterdam")
 	if err != nil {
 		loc = time.UTC
 	}
-	now := time.Now().In(loc)
-	y, m, d := now.Date()
-	start := time.Date(y, m, d, 0, 0, 0, 0, loc)
-	end := start.Add(24 * time.Hour)
 
-	var earliest *Reading
+	var readings []Reading
 
 	// Skip header row (index 0)
 	for _, record := range records[1:] {
@@ -62,31 +56,22 @@ func SelectEarliestToday(path string) (*Reading, error) {
 			continue
 		}
 
-		// Check if timestamp is within today's range
-		if ts.Before(start) || !ts.Before(end) {
-			continue
-		}
-
 		val, err := strconv.ParseFloat(record[1], 64)
 		if err != nil {
 			continue
 		}
 
-		r := &Reading{
+		readings = append(readings, Reading{
 			Timestamp: ts,
 			Value:     val,
-		}
-
-		if earliest == nil || ts.Before(earliest.Timestamp) {
-			earliest = r
-		}
+		})
 	}
 
-	if earliest == nil {
-		return nil, errors.New("no readings found for today")
+	if len(readings) == 0 {
+		return nil, errors.New("no valid readings found in csv")
 	}
 
-	return earliest, nil
+	return readings, nil
 }
 
 // parseTimestamp tries multiple timestamp formats

@@ -1,6 +1,4 @@
 {
-  "_comment": "Use either db_dsn OR csv_path (not both). Token is always required.",
   "db_dsn": "host=127.0.0.1 port=5432 user=p1 password='password' dbname=postgres sslmode=disable options='-c search_path=p1'",
-  "csv_path": "config/sample_readings.csv",
   "token": "token from mindergas.nl"
 }

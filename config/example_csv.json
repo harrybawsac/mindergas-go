@@ -1,0 +1,4 @@
+{
+  "csv_path": "config/sample_readings.csv",
+  "token": "token from mindergas.nl"
+}

@@ -40,16 +40,15 @@ func (c *Conn) Close(ctx context.Context) {
 }
 
 type Reading struct {
-	ID        string
 	Timestamp time.Time
 	Value     float64
 }
 
 // SelectEarliestToday queries p1.external_readings for the earliest created_at
 // for the current date in the Europe/Amsterdam timezone. It returns the
-// earliest row (id, created_at, value). The table is assumed to be in schema
-// p1 and table external_readings with columns id (uuid or text), created_at
-// (timestamptz), and value (numeric/float).
+// earliest row (created_at, value). The table is assumed to be in schema
+// p1 and table external_readings with columns created_at (timestamptz) and
+// value (numeric/float).
 func SelectEarliestToday(ctx context.Context, c *Conn) (*Reading, error) {
 	if c == nil || c.pool == nil {
 		return nil, errors.New("no db connection")
@@ -68,13 +67,13 @@ func SelectEarliestToday(ctx context.Context, c *Conn) (*Reading, error) {
 
 	// Query for earliest created_at between start (inclusive) and end (exclusive)
 	// Note: use parameterized query to avoid SQL injection.
-	const q = `SELECT id, created_at, value FROM p1.external_readings
+	const q = `SELECT created_at, value FROM p1.external_readings
 WHERE created_at >= $1 AND created_at < $2
 ORDER BY created_at ASC LIMIT 1`
 
 	row := c.pool.QueryRow(ctx, q, start, end)
 	var r Reading
-	if err := row.Scan(&r.ID, &r.Timestamp, &r.Value); err != nil {
+	if err := row.Scan(&r.Timestamp, &r.Value); err != nil {
 		return nil, err
 	}
 	return &r, nil

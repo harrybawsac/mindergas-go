@@ -1,6 +1,10 @@
 # mindergas-go
 
-mindergas-go is a small command-line utility written in Go that selects the earliest gas meter reading for "today" from a Postgres database and delivers that reading as JSON to a configured HTTP endpoint. It is intended for automated daily delivery of a baseline meter reading to an external API (for example: mindergas.nl).
+mindergas-go is a small command-line utility written in Go that reads gas meter readings from either a Postgres database or a CSV file and delivers them as JSON to the mindergas.nl API. It is intended for automated delivery of meter readings to the mindergas.nl service.
+
+**Data sources:**
+- **Database mode**: Connects to a Postgres database and selects the earliest reading for today, then POSTs it once.
+- **CSV mode**: Reads all rows from a CSV file and POSTs each reading with a 3-second delay between requests to avoid rate limiting.
 
 This README is intentionally detailed and covers project purpose, configuration, usage, internals, testing, debugging, and recommended development workflows.
 
@@ -20,19 +24,29 @@ This README is intentionally detailed and covers project purpose, configuration,
 
 ## What this project does
 
+### Database mode
 - Connects to a Postgres database (schema `p1`, table `external_readings`) and queries for meter readings recorded within the current day in the `Europe/Amsterdam` timezone.
 - Picks the earliest reading (minimum timestamp) for that day.
-- Serializes the reading as JSON with the shape:
+- Serializes the reading as JSON and POSTs it once.
+
+### CSV mode
+- Reads all rows from a CSV file with format `timestamp,value`.
+- Loops over each reading and POSTs them sequentially.
+- Waits 3 seconds between each POST to prevent rate limiting.
+
+### Payload format
+Both modes send JSON with this shape:
 
   {
     "date": "2025-10-08T00:00:00",
     "reading": 3578.847
   }
 
-- Sends that JSON in a POST request to a configured endpoint with headers `Content-Type: application/json`, `API-VERSION: 1.0`, and `AUTH-TOKEN: <token>`.
+- Sends that JSON in a POST request to `https://www.mindergas.nl/api/meter_readings` with headers `Content-Type: application/json`, `API-VERSION: 1.0`, and `AUTH-TOKEN: <token>`.
 
 ## Quick start
 
+### Using a database
 1. Copy `config/example.json` to `config/config.json` and edit with your Postgres DSN and API token.
 2. Build the binary:
 
@@ -43,13 +57,38 @@ go build -o bin/mindergas ./cmd/main.go
 3. Run the CLI (dry-run to see payload without sending):
 
 ```bash
-./bin/mindergas --config=config/example.json --dry-run
+./bin/mindergas --config=config/config.json --dry-run
 ```
 
 Or run normally to POST the payload:
 
 ```bash
-./bin/mindergas --config=config/example.json
+./bin/mindergas --config=config/config.json
+```
+
+### Using a CSV file
+1. Create a config file with `csv_path` instead of `db_dsn`:
+
+```json
+{
+  "csv_path": "path/to/readings.csv",
+  "token": "your-mindergas-token"
+}
+```
+
+2. Prepare a CSV file with header row and format `timestamp,value`:
+
+```csv
+timestamp,value
+2025-12-29T00:00:00,12345.678
+2025-12-30T00:00:00,12346.123
+2025-12-31T00:00:00,12347.456
+```
+
+3. Run the CLI:
+
+```bash
+./bin/mindergas --config=config/config_csv.json --dry-run
 ```
 
 ## Installation / Build
@@ -68,7 +107,9 @@ Cross-platform builds are automated in `build-all.sh` which produces multiple pl
 
 ## Configuration
 
-The CLI reads a JSON config file (path via `--config`, default `config/example.json`) with this structure:
+The CLI reads a JSON config file (path via `--config`, default `config/example.json`). You must specify either `db_dsn` OR `csv_path` (not both). The `token` is always required.
+
+### Database configuration
 
 ```json
 {
@@ -77,8 +118,32 @@ The CLI reads a JSON config file (path via `--config`, default `config/example.j
 }
 ```
 
-- `db_dsn`: Postgres DSN used to open a `pgxpool` connection. The `db` package expects the `p1` schema and a table named `external_readings` with columns `id`, `created_at` (timestamptz), and `value`.
-- `token`: API token used for `AUTH-TOKEN` header when posting to the target endpoint.
+- `db_dsn`: Postgres DSN used to open a `pgxpool` connection. The `db` package expects the `p1` schema and a table named `external_readings` with columns `created_at` (timestamptz) and `value`.
+
+### CSV configuration
+
+```json
+{
+  "csv_path": "path/to/readings.csv",
+  "token": "token from mindergas.nl"
+}
+```
+
+- `csv_path`: Path to a CSV file containing meter readings.
+
+### CSV file format
+
+The CSV file must have a header row and two columns:
+- `timestamp`: Date/time in RFC3339 or `YYYY-MM-DDTHH:MM:SS` format
+- `value`: Meter reading as a decimal number
+
+Example:
+```csv
+timestamp,value
+2025-12-29T00:00:00,12345.678
+2025-12-30T00:00:00,12346.123
+2025-12-31T00:00:00,12347.456
+```
 
 You can set a custom config path using `--config` flag.
 
@@ -87,40 +152,68 @@ You can set a custom config path using `--config` flag.
 CLI flags (implemented in `cmd/main.go`):
 
 - `--config` (default `config/example.json`) — path to JSON config.
-- `--dry-run` — when set, build and print the JSON payload to stdout but do not POST.
+- `--dry-run` — when set, build and print the JSON payload(s) to stdout but do not POST.
 
-Examples:
+### Database mode examples
 
 ```bash
 # dry-run mode prints the payload
-go run ./cmd --config=config/example.json --dry-run
+go run ./cmd --config=config/config.json --dry-run
 
-# send to remote endpoint (make sure config.json has correct token & DB DSN)
-go run ./cmd --config=config/example.json
+# send to mindergas.nl
+go run ./cmd --config=config/config.json
 ```
+
+### CSV mode examples
+
+```bash
+# dry-run mode prints all payloads (with 3s delay between each)
+go run ./cmd --config=config/config_csv.json --dry-run
+
+# send all readings to mindergas.nl (with 3s delay between each POST)
+go run ./cmd --config=config/config_csv.json
+```
+
+In CSV mode, the tool will:
+1. Read all rows from the CSV file
+2. POST each reading sequentially
+3. Wait 3 seconds between each POST to avoid rate limiting
+4. Continue to the next reading even if one fails
 
 ## How it works (high-level)
 
+### Database mode
 1. `main` loads config and validates presence of `db_dsn` and `token`.
 2. It connects to Postgres using `internal/db.Connect` which returns a `Conn` wrapper over `pgxpool.Pool`.
 3. `internal/db.SelectEarliestToday` queries for the earliest `created_at` between the local day's start (midnight) and next midnight in `Europe/Amsterdam` timezone.
 4. Construct a `models.MeterReading` payload (`date` formatted as `2006-01-02T15:04:05`, `reading` as float64).
 5. If `--dry-run` is set, print the payload and exit.
-6. Otherwise, create an `httpclient.Client` and call `PostJSON` which POSTs the JSON to `https://www.mindergas.nl/api/meter_readings` (URL is hard-coded in `cmd/main.go`) with headers `Content-Type: application/json`, `API-VERSION: 1.0`, and `AUTH-TOKEN`.
+6. Otherwise, POST the JSON to `https://www.mindergas.nl/api/meter_readings`.
+
+### CSV mode
+1. `main` loads config and validates presence of `csv_path` and `token`.
+2. `internal/csvreader.ReadAll` reads all rows from the CSV file.
+3. For each reading:
+   - Construct a `models.MeterReading` payload.
+   - If `--dry-run`, print the payload; otherwise POST it.
+   - Wait 3 seconds before processing the next reading.
 
 ## Project structure
 
 - `cmd/main.go` — CLI entry point.
 - `internal/db/` — DB connection and query helpers.
+- `internal/csvreader/` — CSV file reader for meter readings.
 - `internal/httpclient/` — HTTP client wrapper used to POST JSON with retries.
 - `pkg/models/` — data models (MeterReading struct).
-- `config/` — example config templates.
+- `config/` — example config templates and sample CSV.
 - `build-all.sh` — helper to cross-compile binaries for multiple platforms.
 
 ## Key implementation details
 
 - Timezone: the code uses `Europe/Amsterdam` when computing the day's boundaries. If `time.LoadLocation` fails it falls back to UTC.
 - DB access: uses `github.com/jackc/pgx/v5/pgxpool` for connection pooling. `SelectEarliestToday` expects the schema/table `p1.external_readings`.
+- CSV parsing: uses Go's `encoding/csv` package. Supports multiple timestamp formats (RFC3339, `YYYY-MM-DDTHH:MM:SS`, `YYYY-MM-DD HH:MM:SS`).
+- Rate limiting: CSV mode waits 3 seconds between POSTs to avoid hitting mindergas.nl rate limits.
 - HTTP client: uses `github.com/hashicorp/go-retryablehttp` for a retrying client. The `PostJSON` method builds a real `*http.Request` and sets headers on it so they are present on the outgoing request.
 
 ## Tests

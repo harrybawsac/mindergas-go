@@ -1,4 +1,4 @@
 config/config*
 bin/
 coverage*
-DS_Store
+.DS_Store

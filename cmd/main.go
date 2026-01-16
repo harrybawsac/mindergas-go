@@ -80,7 +80,7 @@ func main() {
 
 		payload := models.MeterReading{
 			Date:    midnight.Format("2006-01-02T15:04:05"),
-			Reading: r.Value,
+			Reading: r.TotalGasM3,
 		}
 
 		b, _ := json.MarshalIndent(payload, "", "  ")

@@ -73,12 +73,12 @@ func TestConnect_InvalidDSN(t *testing.T) {
 func TestReading_Struct(t *testing.T) {
 	ts := time.Date(2025, 12, 31, 12, 34, 56, 0, time.UTC)
 	r := Reading{
-		Timestamp: ts,
-		Value:     123.45,
+		Timestamp:  ts,
+		TotalGasM3: 123.45,
 	}
 
-	if r.Value != 123.45 {
-		t.Errorf("Value = %f, want 123.45", r.Value)
+	if r.TotalGasM3 != 123.45 {
+		t.Errorf("TotalGasM3 = %f, want 123.45", r.TotalGasM3)
 	}
 
 	if r.Timestamp.IsZero() {

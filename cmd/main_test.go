@@ -9,6 +9,13 @@ import (
 )
 
 func TestMain_CSVDryRun(t *testing.T) {
+	// Build the binary first
+	binPath := filepath.Join(t.TempDir(), "mindergas-test")
+	buildCmd := exec.Command("go", "build", "-o", binPath, ".")
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("failed to build binary: %v", err)
+	}
+
 	tmpDir := t.TempDir()
 
 	csvPath := filepath.Join(tmpDir, "test.csv")
@@ -25,14 +32,7 @@ func TestMain_CSVDryRun(t *testing.T) {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
-	if os.Getenv("TEST_MAIN") == "1" {
-		os.Args = []string{"cmd", "--config", configPath, "--dry-run"}
-		main()
-		return
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=TestMain_CSVDryRun", "--config", configPath, "--dry-run")
-	cmd.Env = append(os.Environ(), "TEST_MAIN=1")
+	cmd := exec.Command(binPath, "--config", configPath, "--dry-run")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("command failed: %v\nOutput: %s", err, output)
@@ -48,13 +48,14 @@ func TestMain_CSVDryRun(t *testing.T) {
 }
 
 func TestMain_MissingConfig(t *testing.T) {
-	if os.Getenv("TEST_MAIN") == "1" {
-		main()
-		return
+	// Build the binary first
+	binPath := filepath.Join(t.TempDir(), "mindergas-test")
+	buildCmd := exec.Command("go", "build", "-o", binPath, ".")
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("failed to build binary: %v", err)
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=TestMain_MissingConfig", "--config", "/nonexistent/path.json")
-	cmd.Env = append(os.Environ(), "TEST_MAIN=1")
+	cmd := exec.Command(binPath, "--config", "/nonexistent/path.json")
 	err := cmd.Run()
 	if err == nil {
 		t.Fatal("expected error for missing config, got nil")
